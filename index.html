@@ -24,7 +24,8 @@
             --chat-bg: #111424;
         }
 
-        [data-theme="light"] {
+        /* تعديل كلاس الوضع الفاتح ليعمل بشكل صحيح ومباشر */
+        body.light-theme {
             --bg-color: #f0f2f5;
             --container-bg: #ffffff;
             --border-color: #e4e6eb;
@@ -41,7 +42,7 @@
             font-family: 'Alexandria', -apple-system, BlinkMacSystemFont, sans-serif;
         }
         
-        body { background-color: var(--bg-color); color: var(--text-color); display: flex; flex-direction: column; height: 100vh; overflow: hidden; transition: background 0.3s; }
+        body { background-color: var(--bg-color); color: var(--text-color); display: flex; flex-direction: column; height: 100vh; overflow: hidden; transition: background 0.3s, color 0.3s; }
         header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background-color: var(--container-bg); border-bottom: 1px solid var(--border-color); z-index: 10; }
         h1 { font-size: 22px; color: var(--primary-color); font-weight: 700; }
         
@@ -116,7 +117,7 @@
 
     <header>
         <h1 id="txtTitle">to-omegle 🚀</h1>
-        <button id="themeToggle" style="background:none; border:none; color:var(--text-color); cursor:pointer;">🌓</button>
+        <button id="themeToggle" style="background:none; border:none; color:var(--text-color); font-size: 20px; cursor:pointer;">🌓</button>
     </header>
 
     <!-- 1️⃣ شاشة التسويق والمطابقة الوهمية -->
@@ -235,6 +236,17 @@
         let currentLang = 'ar';
         let intentionalDisconnect = false;
 
+        // 🌗 تشغيل وبرمجة نظام الـ Light Mode و Dark Mode مع الحفظ التلقائي
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        if (savedTheme === 'light') {
+            document.body.classList.add('light-theme');
+        }
+        document.getElementById('themeToggle').onclick = () => {
+            document.body.classList.toggle('light-theme');
+            const theme = document.body.classList.contains('light-theme') ? 'light' : 'dark';
+            localStorage.setItem('theme', theme);
+        };
+
         const langPack = {
             ar: {
                 title: "to-omegle 🚀", promoHead: "اكتشف أشخاصاً جدد حول العالم!", promoBanner: "جاري البحث عن أفراد متصلين الآن...",
@@ -251,6 +263,25 @@
                 statusStopped: "Match stopped. Connection cleared.", statusLeft: "Stranger left! Automatically matching you with next person..."
             }
         };
+
+        // 🎥 دالة طلب صلاحيات الكاميرا والصوت بشكل مبكر جداً ومرة واحدة فقط
+        async function initCameraPermissions() {
+            if (localStream) return true; // مفعّلة مسبقاً، لا تطلبها مجدداً
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                document.getElementById('localVideo').srcObject = localStream;
+                return true;
+            } catch (e) {
+                alert("يرجى تفعيل صلاحيات الكاميرا والصوت من إعدادات المتصفح لكي تتمكن من استخدام الموقع.");
+                return false;
+            }
+        }
+
+        // تشغيل طلب الصلاحية فور فتح الصفحة مباشرة
+        window.addEventListener('DOMContentLoaded', () => {
+            initCameraPermissions();
+            detectLanguage();
+        });
 
         async function detectLanguage() {
             try {
@@ -276,18 +307,13 @@
             document.getElementById('chatInput').placeholder = p.placeholder;
         }
 
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
-            document.documentElement.setAttribute('data-theme', 'light');
-        }
-        document.getElementById('themeToggle').onclick = () => { document.documentElement.toggleAttribute('data-theme'); };
-
         document.getElementById('btnGoogleLogin').onclick = async () => {
+            const hasAccess = await initCameraPermissions();
+            if (!hasAccess) return;
             try {
-                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                document.getElementById('localVideo').srcObject = localStream;
                 await signInWithPopup(auth, new GoogleAuthProvider());
                 localStorage.setItem('toOmegle_stayLogged', 'true');
-            } catch (e) { alert("يتطلب عمل التطبيق تفعيل صلاحيات الكاميرا والصوت."); }
+            } catch (e) { console.error("فشل تسجيل الدخول:", e); }
         };
 
         document.getElementById('logoutBtn').onclick = () => {
@@ -317,12 +343,7 @@
                 document.getElementById('marketingScreen').style.display = 'none';
                 document.getElementById('mainScreen').style.display = 'flex';
                 
-                if (!localStream) {
-                    try {
-                        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                        document.getElementById('localVideo').srcObject = localStream;
-                    } catch(e) { console.error(e); }
-                }
+                await initCameraPermissions();
                 initPeerEngine();
             } else {
                 document.getElementById('marketingScreen').style.display = 'flex';
@@ -336,8 +357,6 @@
                 myPeerId = id;
                 document.getElementById('status').innerText = langPack[currentLang].statusReady;
                 saveAndRefreshProfile();
-                
-                // 🔄 فحص المحاذاة المستمرة بعد إعادة تحديث الصفحة تلقائياً
                 checkSavedSessionAfterRefresh();
             });
 
@@ -364,7 +383,6 @@
             });
         }
 
-        // دالة تفحص السيسشن القديم لو مسجل محلياً عشان ترجع نفس الشخص فوراً
         async function checkSavedSessionAfterRefresh() {
             const savedRoomId = localStorage.getItem('active_room_id');
             const savedRole = localStorage.getItem('active_room_role');
@@ -378,7 +396,6 @@
                         intentionalDisconnect = false;
                         
                         if (savedRole === 'creator') {
-                            // إذا كنت منشئ الغرفة، انتظر اتصال الطرف الآخر مجدداً أو اتصل بـ Peer الخاص به
                             triggerMatchAnimation(roomData.joinedProfile);
                             if (roomData.peerId) {
                                 const call = peer.call(roomData.peerId, localStream, { 
@@ -392,7 +409,6 @@
                                 });
                             }
                         } else {
-                            // إذا كنت المنضم، اتصل بمنشئ الغرفة فوراً لإعادة تفعيل الكاميرات
                             triggerMatchAnimation(roomData.creatorProfile);
                             const call = peer.call('peer-omegle-' + roomData.creatorUid, localStream, { 
                                 metadata: { roomId: currentRoomId, profile: roomData.joinedProfile } 
@@ -410,7 +426,6 @@
                     }
                 }
             }
-            // إذا لم يكن هناك جلسة مخزنة أو كانت الغرفة مغلقة، امسح الكاش
             localStorage.removeItem('active_room_id');
             localStorage.removeItem('active_room_role');
         }
@@ -455,6 +470,10 @@
         }
 
         async function triggerMatchmaking() {
+            // التحقق من الصلاحية قبل بدء البحث، وفي حال كانت مفعلة مسبقاً سيمر فوراً دون طلبها
+            const hasAccess = await initCameraPermissions();
+            if (!hasAccess) return;
+
             intentionalDisconnect = true; 
             await clearPreviousConnection();
             intentionalDisconnect = false;
@@ -615,8 +634,6 @@
             }
         };
         document.getElementById('chatInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') document.getElementById('sendChatBtn').click(); });
-
-        detectLanguage();
     </script>
 </body>
 </html>
